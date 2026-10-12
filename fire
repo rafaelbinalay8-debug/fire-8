@@ -1,0 +1,298 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Cleanup
+if playerGui:FindFirstChild("RatShopClicker") then
+    playerGui.RatShopClicker:Destroy()
+end
+
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RatShopClicker"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 320, 0, 280)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -140)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 35)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Shop Clicker [4080]"
+titleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 18
+titleLabel.Parent = mainFrame
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0.9, 0, 0, 25)
+statusLabel.Position = UDim2.new(0.05, 0, 0.12, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: Arahkan mouse ke item shop"
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.Font = Enum.Font.Code
+statusLabel.TextSize = 13
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = mainFrame
+
+local idDisplay = Instance.new("TextLabel")
+idDisplay.Size = UDim2.new(0.9, 0, 0, 50)
+idDisplay.Position = UDim2.new(0.05, 0, 0.22, 0)
+idDisplay.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+idDisplay.Text = "Item ID: [BELUM ADA]"
+idDisplay.TextColor3 = Color3.fromRGB(100, 255, 100)
+idDisplay.Font = Enum.Font.Code
+idDisplay.TextSize = 16
+idDisplay.TextWrapped = true
+idDisplay.Parent = mainFrame
+
+local idCorner = Instance.new("UICorner")
+idCorner.CornerRadius = UDim.new(0, 6)
+idCorner.Parent = idDisplay
+
+local detectButton = Instance.new("TextButton")
+detectButton.Size = UDim2.new(0.9, 0, 0, 40)
+detectButton.Position = UDim2.new(0.05, 0, 0.45, 0)
+detectButton.Text = "DETECT ITEM DI MOUSE"
+detectButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+detectButton.TextColor3 = Color3.new(1, 1, 1)
+detectButton.Font = Enum.Font.GothamBold
+detectButton.TextSize = 15
+detectButton.Parent = mainFrame
+
+local detectCorner = Instance.new("UICorner")
+detectCorner.CornerRadius = UDim.new(0, 6)
+detectCorner.Parent = detectButton
+
+local executeButton = Instance.new("TextButton")
+executeButton.Size = UDim2.new(0.9, 0, 0, 45)
+executeButton.Position = UDim2.new(0.05, 0, 0.65, 0)
+executeButton.Text = "EKSEKUSI BYPASS"
+executeButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+executeButton.TextColor3 = Color3.new(1, 1, 1)
+executeButton.Font = Enum.Font.GothamBold
+executeButton.TextSize = 16
+executeButton.Parent = mainFrame
+
+local execCorner = Instance.new("UICorner")
+execCorner.CornerRadius = UDim.new(0, 6)
+execCorner.Parent = executeButton
+
+-- Variables
+local detectedItemId = nil
+local detectedItemType = nil
+
+-- Function: Detect item dari mouse target
+local function detectItemAtMouse()
+    local target = mouse.Target
+    
+    if not target then
+        statusLabel.Text = "Status: Gak ada object di mouse"
+        return nil
+    end
+    
+    -- Cari model parent kalau yang di-click adalah part
+    local model = target:FindFirstAncestorWhichIsA("Model") or target
+    local itemId = nil
+    local itemType = "Unknown"
+    
+    -- Method 1: Cari Attribute
+    itemId = model:GetAttribute("ItemId") or 
+             model:GetAttribute("ProductId") or 
+             model:GetAttribute("AssetId") or
+             model:GetAttribute("ID")
+    
+    if itemId then
+        itemType = "Attribute"
+    end
+    
+    -- Method 2: Cari IntValue/NumberValue di dalam model
+    if not itemId then
+        for _, value in pairs(model:GetDescendants()) do
+            if value:IsA("IntValue") or value:IsA("NumberValue") then
+                local name = value.Name:lower()
+                if string.find(name, "id") or string.find(name, "product") or 
+                   string.find(name, "asset") or string.find(name, "item") then
+                    itemId = value.Value
+                    itemType = value.Name
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Method 3: Parse dari nama model (kalau developer taro ID di nama)
+    if not itemId then
+        local modelName = model.Name
+        local idMatch = string.match(modelName, "%d+")
+        if idMatch then
+            itemId = tonumber(idMatch)
+            itemType = "Parsed from Name"
+        end
+    end
+    
+    -- Method 4: Cari Script yang punya ProductId di dalamnya
+    if not itemId then
+        for _, script in pairs(model:GetDescendants()) do
+            if script:IsA("LocalScript") or script:IsA("Script") then
+                local success, source = pcall(function()
+                    return script:GetFullName() -- Fallback kalau source di-protected
+                end)
+                -- Kalau bisa baca source, coba parse ProductId
+                if success and source then
+                    local productId = string.match(source, "ProductId%s*=%s*(%d+)")
+                    if productId then
+                        itemId = tonumber(productId)
+                        itemType = "From Script"
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    if itemId then
+        detectedItemId = itemId
+        detectedItemType = itemType
+        idDisplay.Text = "Item ID: " .. tostring(itemId) .. "\nSource: " .. itemType
+        idDisplay.TextColor3 = Color3.fromRGB(100, 255, 100)
+        statusLabel.Text = "Status: Item terdeteksi!"
+        return itemId
+    else
+        idDisplay.Text = "Item ID: [TIDAK DITEMUKAN]"
+        idDisplay.TextColor3 = Color3.fromRGB(255, 80, 80)
+        statusLabel.Text = "Status: ID tidak ditemukan di object ini"
+        return nil
+    end
+end
+
+-- Function: Eksekusi bypass
+local function executeBypass(itemId)
+    if not itemId then
+        statusLabel.Text = "Status: ERROR - Belum ada ID terdeteksi"
+        return
+    end
+    
+    statusLabel.Text = "Status: Firing payloads..."
+    
+    -- Payload 1: Spoof PromptProductPurchaseFinished
+    pcall(function()
+        MarketplaceService:PromptProductPurchaseFinished(
+            player.UserId, 
+            tonumber(itemId), 
+            Enum.ProductPurchaseDecision.PurchaseGranted
+        )
+    end)
+    
+    -- Payload 2: Fire semua RemoteEvent yang namanya mirip shop/buy/purchase
+    local remoteCount = 0
+    for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+        if remote:IsA("RemoteEvent") then
+            local name = remote.Name:lower()
+            if string.find(name, "buy") or string.find(name, "shop") or 
+               string.find(name, "purchase") or string.find(name, "item") or
+               string.find(name, "product") or string.find(name, "get") or
+               string.find(name, "claim") or string.find(name, "give") then
+                
+                -- Spam berbagai variasi argument
+                pcall(function() remote:FireServer(tonumber(itemId)) end)
+                pcall(function() remote:FireServer(tostring(itemId)) end)
+                pcall(function() remote:FireServer(tonumber(itemId), true) end)
+                pcall(function() remote:FireServer(tonumber(itemId), player.UserId) end)
+                pcall(function() remote:FireServer(tonumber(itemId), 1) end)
+                pcall(function() remote:FireServer(tonumber(itemId), "PurchaseGranted") end)
+                
+                remoteCount = remoteCount + 1
+            end
+        end
+    end
+    
+    -- Payload 3: Fire RemoteFunction (kalau ada)
+    for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+        if remote:IsA("RemoteFunction") then
+            local name = remote.Name:lower()
+            if string.find(name, "buy") or string.find(name, "shop") or 
+               string.find(name, "purchase") or string.find(name, "item") then
+                
+                pcall(function() remote:InvokeServer(tonumber(itemId)) end)
+                pcall(function() remote:InvokeServer(tonumber(itemId), true) end)
+                remoteCount = remoteCount + 1
+            end
+        end
+    end
+    
+    statusLabel.Text = "Status: DONE - Fired " .. remoteCount .. " remotes. Cek inventory!"
+    
+    -- Auto-refresh display setelah 3 detik
+    task.delay(3, function()
+        statusLabel.Text = "Status: Arahkan mouse ke item shop"
+    end)
+end
+
+-- Button Connections
+detectButton.MouseButton1Click:Connect(function()
+    detectItemAtMouse()
+end)
+
+executeButton.MouseButton1Click:Connect(function()
+    if detectedItemId then
+        executeBypass(detectedItemId)
+    else
+        statusLabel.Text = "Status: Detect item dulu sebelum eksekusi!"
+    end
+end)
+
+-- Hotkey: Tekan 'E' buat detect, 'R' buat execute
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.E then
+        detectItemAtMouse()
+    elseif input.KeyCode == Enum.KeyCode.R then
+        if detectedItemId then
+            executeBypass(detectedItemId)
+        end
+    end
+end)
+
+-- Highlight system: kasih outline ke object yang di-hover
+local highlight = Instance.new("Highlight")
+highlight.FillColor = Color3.fromRGB(255, 80, 80)
+highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+highlight.FillTransparency = 0.7
+highlight.OutlineTransparency = 0
+highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+
+RunService.RenderStepped:Connect(function()
+    local target = mouse.Target
+    if target then
+        local model = target:FindFirstAncestorWhichIsA("Model") or target
+        if model:IsA("Model") or model:IsA("BasePart") then
+            highlight.Adornee = model
+            highlight.Parent = model
+        else
+            highlight.Parent = nil
+        end
+    else
+        highlight.Parent = nil
+    end
+end)
+
+statusLabel.Text = "Status: Panel aktif. Hover + klik DETECT atau tekan E"
